@@ -162,19 +162,183 @@ box(5.7,.08,.6,1.2,-.11,5.05,stone,3.15);
 const grid=new THREE.GridHelper(13,26,0x42618b,0x293949);grid.position.y=-.54;building.add(grid);
 const ground=new THREE.Mesh(new THREE.PlaneGeometry(100,100),new THREE.ShadowMaterial({opacity:.25}));ground.rotation.x=-Math.PI/2;ground.position.y=-.55;scene.add(ground);
 const edgeGroup=new THREE.Group();building.add(edgeGroup);for(const p of parts){if(p.phase<0||p.organic)continue;const edges=new THREE.LineSegments(new THREE.EdgesGeometry(p.mesh.geometry),new THREE.LineBasicMaterial({color:0x669aff,transparent:true,opacity:.2}));edges.position.copy(p.mesh.position);edgeGroup.add(edges);}
-const story=document.querySelector('.story'),phase=document.querySelector('#phase'),pct=document.querySelector('#percent'),progress=document.querySelector('.progress i');let target=0,current=0,visible=true,dirty=true;
-function resize(){
- const w=host.clientWidth,h=host.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;
- const center=new THREE.Vector3(0,7.0,0);
- const verticalFov=THREE.MathUtils.degToRad(camera.fov),horizontalFov=2*Math.atan(Math.tan(verticalFov/2)*camera.aspect);
- const distance=9.8/Math.sin(Math.min(verticalFov,horizontalFov)/2);
- camera.position.copy(center).add(new THREE.Vector3(1,.55,1.3).normalize().multiplyScalar(distance));
- camera.lookAt(center);camera.updateProjectionMatrix();dirty=true;
+
+// Two further buildings share one world; the camera travels between them.
+const restoration=new THREE.Group(),villa=new THREE.Group();restoration.position.x=26;villa.position.x=52;scene.add(restoration,villa);
+const additions=[[],[]],oldFacade=mat(0x867c70),newFacade=mat(0xd7cbb6),brick=mat(0x8b5947),trim=mat(0xe8e0d0),roofMat=mat(0x494e54),warmWood=mat(0x956d49);
+const oldElements=[],newElements=[],scaffolding=[],villaWindows=[];
+function block(group,list,w,h,d,x,y,z,material,phase=0){
+ const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);list.push({mesh,y,phase});return mesh;
 }
-function scroll(){target=Math.max(0,Math.min(1,-story.getBoundingClientRect().top/(story.offsetHeight-innerHeight)));dirty=true;}
+const rb=(...args)=>block(restoration,additions[0],...args),vb=(...args)=>block(villa,additions[1],...args);
+// Historic corner building inspired by the supplied photographs.
+// True arched openings, projecting stonework, balustrades and a corner cupola.
+const ivory=mat(0xe5ddcb,.88),sandstone=mat(0xc5b7a0,.82),windowWood=mat(0x44362c,.48),zinc=mat(0x697779,.45,.45);
+const historicGlass=new THREE.MeshPhysicalMaterial({color:0x66818a,roughness:.14,metalness:.3,transparent:true,opacity:.82});
+rb(12,.25,10,0,-.4,0,steel,-1);rb(11.6,.22,9.6,0,-.16,0,stone,-1);
+const footprint=new THREE.Shape();footprint.moveTo(-4,-3);footprint.lineTo(4,-3);footprint.lineTo(4,1.8);footprint.lineTo(2.8,3);footprint.lineTo(-4,3);footprint.closePath();
+function historicMesh(geometry,material,x,y,z,phase=-1,angle=0){
+ const mesh=new THREE.Mesh(geometry,material);mesh.position.set(x,y,z);mesh.rotation.y=angle;mesh.castShadow=true;mesh.receiveShadow=true;restoration.add(mesh);additions[0].push({mesh,y,phase});return mesh;
+}
+function floorPlate(y,depth,material,phase){
+ const g=new THREE.ExtrudeGeometry(footprint,{depth,bevelEnabled:false});g.rotateX(Math.PI/2);return historicMesh(g,material,0,y,0,phase);
+}
+// Face-local coordinates allow the same detailed treatment around the chamfered corner.
+const faces=[{x:-.6,z:3,a:0,w:6.8,n:4},{x:4,z:-.6,a:Math.PI/2,w:4.8,n:3},{x:3.4,z:2.4,a:Math.PI/4,w:1.697,n:1}];
+function faceMesh(face,g,material,x,y,z,phase){return historicMesh(g,material,face.x+x*Math.cos(face.a)+z*Math.sin(face.a),y,face.z-x*Math.sin(face.a)+z*Math.cos(face.a),phase,face.a);}
+function fb(face,w,h,d,x,y,z,material,phase){return faceMesh(face,new THREE.BoxGeometry(w,h,d),material,x,y,z,phase);}
+function archShape(width,height){const r=width/2,q=new THREE.Shape();q.moveTo(-r,0);q.lineTo(r,0);q.lineTo(r,height-r);q.absarc(0,height-r,r,0,Math.PI,false);q.lineTo(-r,0);return q;}
+function balustrade(face,x,y,width,phase){
+ fb(face,width+.18,.16,.75,x,y,.36,ivory,phase);
+ fb(face,width+.1,.1,.15,x,y+.64,.68,ivory,phase);
+ const profile=[new THREE.Vector2(.055,0),new THREE.Vector2(.065,.07),new THREE.Vector2(.035,.16),new THREE.Vector2(.075,.29),new THREE.Vector2(.04,.43),new THREE.Vector2(.055,.5)];
+ const geo=new THREE.LatheGeometry(profile,8);
+ const count=Math.round(width/.19);
+ for(let k=0;k<=count;k++)faceMesh(face,geo,ivory,x-width/2+k*width/count,y+.1,.68,phase+.04);
+ for(const side of [-1,1]){
+  fb(face,.15,.68,.7,x+side*(width/2+.04),y+.32,.35,ivory,phase);
+  fb(face,.16,.32,.32,x+side*width*.34,y-.22,.14,sandstone,phase);
+ }
+}
+for(let f=0;f<4;f++){
+ const base=.12+f*2.5,finish=1.7+f*.13;
+ floorPlate(base,.15,concrete,-1);
+ rb(7.9,2.45,.2,0,base+1.2,-2.95,oldFacade,-1);rb(.2,2.45,5.9,-3.95,base+1.2,0,oldFacade,-1);
+ for(const face of faces){
+  const wall=new THREE.Shape();wall.moveTo(-face.w/2,0);wall.lineTo(face.w/2,0);wall.lineTo(face.w/2,2.5);wall.lineTo(-face.w/2,2.5);wall.closePath();
+  const gap=face.w/face.n,ww=face.n===1?1.08:1.04,wh=f===0?2.03:1.72,sill=f===0?.06:.44;
+  for(let k=0;k<face.n;k++){
+   const x=-face.w/2+gap*(k+.5),r=ww/2,hole=new THREE.Path();hole.moveTo(x-r,sill);hole.lineTo(x+r,sill);hole.lineTo(x+r,sill+wh-r);hole.absarc(x,sill+wh-r,r,0,Math.PI,false);hole.lineTo(x-r,sill);wall.holes.push(hole);
+  }
+  const wallGeo=new THREE.ExtrudeGeometry(wall,{depth:.18,bevelEnabled:false});
+  oldElements.push(faceMesh(face,wallGeo,oldFacade,0,base,-.16,-1));
+  newElements.push(faceMesh(face,wallGeo,ivory,0,base,-.15,finish));
+  for(let k=0;k<face.n;k++){
+   const x=-face.w/2+gap*(k+.5),r=ww/2,archY=base+sill+wh-r;
+   const paneGeometry=new THREE.ShapeGeometry(archShape(ww,wh));
+   oldElements.push(faceMesh(face,paneGeometry,spandrel,x,base+sill,-.10,-1));
+   const pane=faceMesh(face,paneGeometry,historicGlass,x,base+sill,-.09,finish+.15);pane.castShadow=false;
+   for(const side of [-1,1]){
+    fb(face,.075,wh-r,.12,x+side*r,base+sill+(wh-r)/2,.015,windowWood,finish+.2);
+    fb(face,.13,wh-r,.24,x+side*(r+.11),base+sill+(wh-r)/2,.07,sandstone,finish+.3);
+   }
+   faceMesh(face,new THREE.TorusGeometry(r,.04,5,18,Math.PI),windowWood,x,archY,.015,finish+.2);
+   faceMesh(face,new THREE.TorusGeometry(r+.11,.085,5,20,Math.PI),ivory,x,archY,.09,finish+.3);
+   fb(face,.045,wh,.07,x,base+sill+wh/2,.015,windowWood,finish+.2);
+   fb(face,ww,.045,.07,x,archY,.015,windowWood,finish+.2);
+   fb(face,ww+.34,.11,.34,x,base+sill-.04,.13,sandstone,finish+.3);
+   fb(face,.17,.22,.25,x,archY+r+.08,.12,ivory,finish+.35);
+   if(f>0){
+    // Relief panel below the window and a rosette above its arch.
+    fb(face,ww+.15,.22,.08,x,base+.2,.07,sandstone,finish+.35);
+    faceMesh(face,new THREE.TorusGeometry(.13,.035,4,12),ivory,x,base+2.3,.10,finish+.4);
+    if(face.n===1||(f===1&&k===1))balustrade(face,x,base+.38,ww+.28,finish+.4);
+   }
+  }
+  // Layered cornices and pilasters give the facade real depth.
+  for(const [dy,h,d] of [[.02,.09,.22],[2.38,.08,.27],[2.48,.12,.38]])fb(face,face.w+.08,h,d,0,base+dy,.06,ivory,finish+.3);
+  for(let k=0;k<=face.n;k++){
+   const x=-face.w/2+gap*k;
+   if(f>0){
+    fb(face,.18,2.07,.18,x,base+1.22,.06,sandstone,finish+.25);
+    fb(face,.29,.15,.28,x,base+2.25,.09,ivory,finish+.3);
+    fb(face,.25,.13,.25,x,base+.25,.09,ivory,finish+.3);
+   }else for(let row=0;row<7;row++)fb(face,.35,.31,.1,x,base+.18+row*.34,.09,ivory,finish+.2);
+  }
+ }
+}
+floorPlate(10.2,.23,sandstone,2.8);
+for(const face of faces){
+ fb(face,face.w+.24,.22,.52,0,10.19,.13,ivory,2.85);
+ for(let x=-face.w/2+.1;x<face.w/2;x+=.26)fb(face,.12,.16,.23,x,9.98,.19,ivory,2.85);
+ fb(face,face.w,.5,.14,0,10.58,.0,ivory,2.9);
+ fb(face,face.w+.1,.10,.3,0,10.85,.04,sandstone,2.9);
+}
+// Set-back glass roof and a small metal cupola at the corner.
+rb(6.8,.18,4.6,-.35,10.72,-.4,zinc,2.9);
+rb(6.7,.64,.05,-.35,11.08,1.92,glazing[1],3.0);
+rb(.05,.64,4.3,3.0,11.08,-.3,glazing[1],3.0);
+rb(7,.10,4.7,-.35,11.43,-.4,zinc,3.05);
+for(let x=-3.65;x<3;x+=.62)rb(.035,.69,.075,x,11.08,1.96,steel,3.02);
+const corner=faces[2];fb(corner,1.45,1.0,1.15,0,11.22,-.3,ivory,3.05);
+faceMesh(corner,new THREE.ShapeGeometry(archShape(.7,.76)),historicGlass,0,10.86,.29,3.08);
+const domeProfile=[new THREE.Vector2(.84,0),new THREE.Vector2(.84,.09),new THREE.Vector2(.72,.18),new THREE.Vector2(.59,.42),new THREE.Vector2(.43,.59),new THREE.Vector2(.25,.67),new THREE.Vector2(.24,.83)];
+historicMesh(new THREE.LatheGeometry(domeProfile,12),zinc,3.17,11.73,2.17,3.1);
+historicMesh(new THREE.CylinderGeometry(.11,.15,.48,8),zinc,3.17,12.74,2.17,3.14);
+historicMesh(new THREE.ConeGeometry(.24,.34,8),zinc,3.17,13.14,2.17,3.17);
+// Ground floor awnings, entrance and small planters.
+for(const face of faces.slice(0,2))for(let k=0;k<face.n;k++){
+ const x=-face.w/2+face.w/face.n*(k+.5);
+ const canopy=fb(face,1.24,.1,.72,x,1.96,.43,trim,2.9);canopy.rotation.x=.12;
+}
+for(const side of [-1,1]){
+ const x=3.4+side*.68*.707,z=2.4-side*.68*.707;
+ rb(.34,.5,.34,x+.25,.26,z+.25,steel,3.1);
+ const foliage=historicMesh(new THREE.ConeGeometry(.23,.92,8),leafMats[1],x+.25,.92,z+.25,3.15);
+}
+// Scaffold wraps both street elevations during the illustrative renovation.
+for(const face of faces.slice(0,2)){
+ for(let x=-face.w/2;x<=face.w/2+.05;x+=face.w/4)scaffolding.push(fb(face,.045,10.7,.045,x,5.35,.82,steel,-1));
+ for(let h=0;h<5;h++){
+  scaffolding.push(fb(face,face.w+.6,.065,.72,0,.8+h*2.15,.85,warmWood,-1));
+  scaffolding.push(fb(face,face.w+.6,.035,.035,0,1.7+h*2.15,1.19,steel,-1));
+ }
+}
+// Low villa: structural planes, warm interiors, open glazing and a terrace.
+vb(13,.25,9,0,-.4,0,steel,-1);vb(12.5,.2,8.4,0,-.15,0,stone,0);
+vb(9.7,.18,5.9,0,.07,0,concrete,.1);
+for(const x of [-4.3,0,4.3])for(const z of [-2.5,2.5])vb(.15,2.9,.15,x,1.6,z,steel,.65);
+vb(9.9,.22,6.1,0,3.13,0,trim,1.05);
+vb(7,.16,4.5,-.6,3.31,-.3,concrete,1.15);
+for(const x of [-3.6,2.4])for(const z of [-2.3,1.7])vb(.14,2.5,.14,x,4.6,z,steel,1.3);
+vb(7.5,.22,4.8,-.6,5.98,-.3,trim,1.5);
+vb(9.0,2.8,.2,0,1.6,-2.6,trim,1.9);vb(.2,2.8,5.1,-4.4,1.6,0,trim,1.9);
+vb(2.1,2.8,.2,3.35,1.6,2.6,warmWood,2.0);
+vb(6.5,2.44,.15,-.6,4.61,-2.36,trim,2.05);vb(.15,2.44,4,-3.8,4.61,-.3,trim,2.05);
+for(const [w,h,d,x,y,z] of [[6.5,2.68,.035,-1.05,1.62,2.61],[.035,2.68,5.15,4.4,1.62,0],[6.25,2.38,.035,-.6,4.63,1.76],[.035,2.38,4,2.56,4.63,-.3]]){
+ const mesh=vb(w,h,d,x,y,z,clearGlass,2.2);mesh.castShadow=false;villaWindows.push(mesh);
+}
+for(const x of [-4.25,-2.15,0,2.1])vb(.045,2.8,.07,x,1.6,2.65,steel,2.3);
+vb(6.8,.11,1.15,-.6,3.27,2.35,trim,2.35);vb(6.6,.78,.035,-.6,3.73,2.9,glazing[1],2.55);vb(6.65,.035,.05,-.6,4.14,2.9,steel,2.55);
+vb(8.6,.06,5,-.05,.22,0,warmWood,2.5);
+// Furniture is genuinely inside the model and becomes visible on approach.
+vb(2.4,.34,.9,-1.6,.48,1.35,upholstery,2.7);vb(2.4,.55,.16,-1.6,.77,1.75,upholstery,2.7);
+vb(.7,.34,1.65,-2.6,.48,.65,upholstery,2.7);vb(1.25,.13,.8,-.6,.55,.4,warmWood,2.8);
+vb(2.1,.9,.7,2.8,.7,-1.6,stone,2.8);vb(2.8,.09,.95,1.8,1.2,-1.55,steel,2.8);
+vb(1.85,.4,2.0,-1,3.7,-.3,upholstery,2.8);
+for(const x of [-4.4,4.2]){
+ vb(.85,.4,.85,x,.4,3.45,steel,2.85);
+ const leaves=new THREE.Mesh(new THREE.IcosahedronGeometry(.58,1),leafMats[1]);leaves.position.set(x,1.07,3.45);villa.add(leaves);additions[1].push({mesh:leaves,y:1.07,phase:3.0});
+}
+for(const g of [restoration,villa]){const grid=new THREE.GridHelper(15,24,0x42618b,0x293949);grid.position.y=-.54;g.add(grid);}
+const story=document.querySelector('.story'),phase=document.querySelector('#phase'),pct=document.querySelector('#percent'),progress=document.querySelector('.progress i'),modelNote=document.querySelector('.model-note');let target=0,current=0,visible=true,dirty=true;
+const clamp=THREE.MathUtils.clamp,smooth=(a,b,x)=>THREE.MathUtils.smoothstep(x,a,b);
+function resize(){const w=host.clientWidth,h=host.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();dirty=true;}
+function scroll(){target=clamp(-story.getBoundingClientRect().top/(story.offsetHeight-innerHeight),0,1);dirty=true;}
 addEventListener('resize',resize);addEventListener('scroll',scroll,{passive:true});resize();scroll();
 new IntersectionObserver(e=>{visible=e[0].isIntersecting;if(visible)dirty=true;}).observe(story);
-function frame(){requestAnimationFrame(frame);if(!visible||(!dirty&&Math.abs(current-target)<.0001))return;current=reduced?target:current+(target-current)*.075;const t=current;building.rotation.y=-.35+t*Math.PI*.72;edgeGroup.visible=t<.42;edgeGroup.children.forEach(e=>{e.material.opacity=.23*(1-Math.min(1,t/.42));});for(const p of parts){if(p.phase<0)continue;const level=t*4.3;const amount=THREE.MathUtils.smoothstep(level,p.phase*.85,p.phase*.85+.65);p.mesh.visible=amount>.005;p.mesh.scale.y=Math.max(.001,amount);p.mesh.position.y=p.y+(1-amount)*(reduced?0:2);}
-const n=Math.min(3,Math.floor(t*4));phase.textContent=['01 / IDEJA','02 / TEMELJI','03 / KONSTRUKCIJA','04 / ZAVRŠNA OBRADA'][n];pct.textContent=String(Math.round(t*100)).padStart(2,'0')+'%';progress.style.width=t*100+'%';renderer.render(scene,camera);dirty=false;}frame();
+function grow(list,p){for(const part of list){if(part.phase<0)continue;const amount=smooth(part.phase*.85,part.phase*.85+.65,p*4.3);part.mesh.visible=amount>.005;part.mesh.scale.y=Math.max(.001,amount);part.mesh.position.y=part.y+(1-amount)*(reduced?0:1.8);}}
+function frame(){requestAnimationFrame(frame);if(!visible||(!dirty&&Math.abs(current-target)<.0001))return;
+ current=reduced?target:current+(target-current)*.075;const t=current;
+ const first=clamp(t/.29,0,1),second=clamp((t-.35)/.28,0,1),third=clamp((t-.69)/.28,0,1);
+ const travel1=smooth(.29,.36,t),travel2=smooth(.63,.70,t);
+ const center=new THREE.Vector3(26*(travel1+travel2),7-.7*travel1-3.3*travel2,0);
+ const radius=9.8-.6*travel1-1.65*travel2-1.0*smooth(.90,1,t);
+ const vf=THREE.MathUtils.degToRad(camera.fov),hf=2*Math.atan(Math.tan(vf/2)*camera.aspect),distance=radius/Math.sin(Math.min(vf,hf)/2);
+ const angle=.6+.28*Math.sin(t*Math.PI*2);
+ camera.position.copy(center).add(new THREE.Vector3(Math.sin(angle),.48,Math.cos(angle)).normalize().multiplyScalar(distance));camera.lookAt(center);
+ key.position.set(center.x+8,20,10);key.target.position.copy(center);scene.add(key.target);fill.position.set(center.x-6,8,-5);
+ building.rotation.y=-.35+first*.95;restoration.rotation.y=-.30+second*.12;villa.rotation.y=-.2+third*.38;
+ building.visible=t<.43;restoration.visible=t>.25&&t<.77;villa.visible=t>.58;
+ grow(parts,first);grow(additions[0],second);grow(additions[1],third);
+ edgeGroup.visible=first<.45;edgeGroup.children.forEach(e=>{e.material.opacity=.23*(1-Math.min(1,first/.45));});
+ oldElements.forEach(m=>{m.visible=second<.43;});
+ scaffolding.forEach(m=>{m.visible=second>.12&&second<.78;});
+ villaWindows.forEach(m=>{m.visible=m.visible&&third<.9;});
+ const n=t<.33?0:t<.67?1:2;
+ phase.textContent=['01 / NOVOGRADNJA','02 / REKONSTRUKCIJA','03 / VILA I INTERIJER'][n];
+ modelNote.innerHTML=['CS / NOVOGRADNJA','CS / OBNOVA','CS / ZAVRŠNI RADOVI'][n]+'<span>Ilustrativni model · '+(n+1)+' / 3</span>';
+ pct.textContent=String(Math.round(t*100)).padStart(2,'0')+'%';progress.style.width=t*100+'%';renderer.render(scene,camera);dirty=false;
+}frame();
 }
 document.querySelector('#year').textContent=new Date().getFullYear();
